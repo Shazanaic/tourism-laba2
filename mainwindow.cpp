@@ -4,9 +4,10 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
     ui->setupUi(this);
-    ui->tableWidget->setColumnCount(4);
-    ui->tableWidget->setHorizontalHeaderLabels({"Название", "Дата", "Стоимость, $", "Изображение"});
+    ui->tableWidget->setColumnCount(5);
+    ui->tableWidget->setHorizontalHeaderLabels({"Название", "Дата", "Стоимость, $", "Изображение", "Индекс"});
     ui->tableWidget->horizontalHeader()->setStretchLastSection(true);
+    ui->tableWidget->setColumnHidden(4, true);
 }
 
 MainWindow::~MainWindow() {
@@ -22,8 +23,10 @@ void MainWindow::updateTable() {
 
         QLabel *imageLabel = new QLabel;
         QPixmap pix(trips[i].imagePath);
-        imageLabel->setPixmap(pix.scaled(64, 64, Qt::KeepAspectRatio));
+        imageLabel->setPixmap(pix.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         ui->tableWidget->setCellWidget(i, 3, imageLabel);
+
+        ui->tableWidget->setItem(i, 4, new QTableWidgetItem(QString::number(i)));
     }
 
     updateList();
@@ -48,14 +51,18 @@ void MainWindow::on_add_clicked() {
 
 void MainWindow::on_deleteB_clicked() {
     auto selectedItems = ui->tableWidget->selectedItems();
-    std::set<int> rowsToDelete;
+    std::set<int> indexDELETOR;
 
-    for (QTableWidgetItem *item : selectedItems)
-        rowsToDelete.insert(item->row());
+    for (QTableWidgetItem *item : selectedItems) {
+        int row = item->row();
+        QTableWidgetItem *idItem = ui->tableWidget->item(row, 4);
+        if (idItem)
+            indexDELETOR.insert(idItem->text().toInt());
+    }
 
     std::vector<Trip> newTrips;
     for (int i = 0; i < trips.size(); ++i)
-        if (!rowsToDelete.count(i))
+        if (!indexDELETOR.count(i))
             newTrips.push_back(trips[i]);
 
     trips = std::move(newTrips);
@@ -64,11 +71,17 @@ void MainWindow::on_deleteB_clicked() {
 
 void MainWindow::on_edit_clicked() {
     int row = ui->tableWidget->currentRow();
-    if (row < 0 || row >= trips.size()) return;
+    if (row < 0) return;
 
-    trips[row].name = ui->nameEdit->text();
-    trips[row].date = ui->dateEdit->text();
-    trips[row].cost = ui->costEdit->text().toDouble();
+    QTableWidgetItem* idItem = ui->tableWidget->item(row, 4);
+    if (!idItem) return;
+
+    int index = idItem->text().toInt();
+    if (index < 0 || index >= trips.size()) return;
+
+    trips[index].name = ui->nameEdit->text();
+    trips[index].date = ui->dateEdit->text();
+    trips[index].cost = ui->costEdit->text().toDouble();
     updateTable();
 }
 
@@ -77,7 +90,8 @@ void MainWindow::on_search_clicked() {
     ui->tableWidget->setRowCount(0);
     int row = 0;
 
-    for (const auto& t : trips) {
+    for (int i = 0; i < trips.size(); ++i) {
+        const auto& t = trips[i];
         if (t.name.toLower().contains(query)) {
             ui->tableWidget->insertRow(row);
             ui->tableWidget->setItem(row, 0, new QTableWidgetItem(t.name));
@@ -85,18 +99,27 @@ void MainWindow::on_search_clicked() {
             ui->tableWidget->setItem(row, 2, new QTableWidgetItem(QString::number(t.cost)));
 
             QLabel *img = new QLabel;
-            img->setPixmap(QPixmap(t.imagePath).scaled(64, 64, Qt::KeepAspectRatio));
+            img->setPixmap(QPixmap(t.imagePath).scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation));
             ui->tableWidget->setCellWidget(row, 3, img);
+
+            ui->tableWidget->setItem(row, 4, new QTableWidgetItem(QString::number(i)));
             ++row;
         }
     }
 }
 
 void MainWindow::on_tableWidget_cellClicked(int row, int) {
-    if (row < 0 || row >= trips.size()) return;
-    ui->nameEdit->setText(trips[row].name);
-    ui->dateEdit->setText(trips[row].date);
-    ui->costEdit->setText(QString::number(trips[row].cost));
+    if (row < 0) return;
+
+    QTableWidgetItem* idItem = ui->tableWidget->item(row, 4);
+    if (!idItem) return;
+
+    int index = idItem->text().toInt();
+    if (index < 0 || index >= trips.size()) return;
+
+    ui->nameEdit->setText(trips[index].name);
+    ui->dateEdit->setText(trips[index].date);
+    ui->costEdit->setText(QString::number(trips[index].cost));
 }
 
 void MainWindow::on_saveas_triggered() {
@@ -110,7 +133,6 @@ void MainWindow::on_saveas_triggered() {
         out << t.name << '\n' << t.date << '\n' << t.cost << '\n' << t.imagePath << '\n';
     file.close();
 }
-
 
 void MainWindow::on_open_triggered() {
     QString fileName = QFileDialog::getOpenFileName(this, "Открыть", "", "(*.txt)");
@@ -139,8 +161,8 @@ void MainWindow::on_open_triggered() {
 void MainWindow::on_about_triggered() {
     QMessageBox::information(this, "О программе",
                              "Редактор таблиц под туристические поездки\n"
-                             "Название, время, цена, фотка\n"
-                             "Изменение элементов через кнопку Изменить \n Антон Орлевич");
+                             "Название, время, цена, фото\n"
+                             "Изменение элементов через кнопку 'Изменить'\nАнтон Орлевич");
 }
 
 void MainWindow::on_sort_clicked() {
@@ -152,13 +174,17 @@ void MainWindow::on_sort_clicked() {
     updateTable();
 }
 
-void MainWindow::on_tableWidget_cellDoubleClicked(int row, int column)
-{
-    if (column == 3 && row >= 0 && row < trips.size()) {
+void MainWindow::on_tableWidget_cellDoubleClicked(int row, int column) {
+    if (column == 3 && row >= 0) {
+        QTableWidgetItem* idItem = ui->tableWidget->item(row, 4);
+        if (!idItem) return;
+        int index = idItem->text().toInt();
+        if (index < 0 || index >= trips.size()) return;
+
         QDialog* imgDialog = new QDialog(this);
-        imgDialog->setWindowTitle(trips[row].name);
+        imgDialog->setWindowTitle(trips[index].name);
         QLabel* imgLabel = new QLabel(imgDialog);
-        imgLabel->setPixmap(QPixmap(trips[row].imagePath).scaled(400, 400, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        imgLabel->setPixmap(QPixmap(trips[index].imagePath).scaled(400, 400, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         QVBoxLayout* layout = new QVBoxLayout;
         layout->addWidget(imgLabel);
         imgDialog->setLayout(layout);
